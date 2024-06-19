@@ -47,10 +47,6 @@ jobs:
   macos_test:
     runs-on: macos-latest
     steps:
-      - name: pre
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          brew install parallel
       - name: asdf_plugin_test_flink
         uses: asdf-vm/actions/plugin-test@v3
         with:

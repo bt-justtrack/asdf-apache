@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -Eeu pipefail
 
 BIN_DIR=""
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,120 +9,125 @@ declare THIS_PLUGIN_DIR PRODUCT_NAME
 readonly INCLUDE_SRC="${INCLUDE_SRC:-false}"
 THIS_PLUGIN_DIR="$(dirname "${BIN_DIR}")"
 readonly THIS_PLUGIN_DIR
-readonly THIS_PLUGIN_LIB_DIR="${THIS_PLUGIN_DIR}/lib"
+THIS_PLUGIN_LIB_DIR="${THIS_PLUGIN_DIR}/lib"
+readonly THIS_PLUGIN_LIB_DIR
 
 # shellcheck source=../lib/utils.bash
 . "${THIS_PLUGIN_LIB_DIR}/utils.bash"
 
 releases_path() {
-  local -r product_name="${1}"
-  local -r version="${2:-}"
-  echo "https://archive.apache.org/dist/${product_name}/${version}"
+    local -r product_name="${1}"
+    local -r version="${2:-}"
+    echo "https://archive.apache.org/dist/${product_name}/${version}"
 }
 
 list_release_folders() {
-  local -r product_name="$1"
-  local -r releases_path="$2"
-  local -r curl_cmd="$(command -vp curl)"
-  local -r cmd="${curl_cmd} ${curl_opts[*]}"
+    local -r product_name="$1"
+    local -r releases_path="$2"
+    local -r curl_cmd="$(command -vp curl)"
+    local -r cmd="${curl_cmd} ${curl_opts[*]}"
 
-  local raw_versions trimmed_versions grep_str
-  raw_versions="$(eval "${cmd}" "${releases_path}")"
-  grep_str='href=".+\/">'
-  trimmed_versions="$(echo "${raw_versions}" | grep -oE "${grep_str}" | sed -E 's/.+"(apache-)?(.+)">/\2/g' | cut -d/ -f1)"
-  echo "${trimmed_versions}" | sort_top_level_versions
+    local raw_versions trimmed_versions grep_str
+    raw_versions="$(eval "${cmd}" "${releases_path}")"
+    grep_str='href=".+/">'
+    trimmed_versions="$(echo "${raw_versions}" | grep -oE "${grep_str}" | sed -E 's/.+"(apache-)?(.+)">/\2/g' | cut -d/ -f1)"
+    echo "${trimmed_versions}" | sort_top_level_versions
 }
 
 list_versions() {
-  local -r product_name="$1"
-  local -r releases_path="$2"
-  local -r include_src="${3:-false}"
+    local -r product_name="$1"
+    local -r releases_path="$2"
+    local -r include_src="${3:-false}"
 
-  local -r curl_cmd="$(command -vp curl)"
-  local -r cmd="${curl_cmd} ${curl_opts[*]}"
-  local -r grep_str='href=".*'"(${product_name})?"'.+(tgz|tar.gz)">'
+    local -r curl_cmd="$(command -vp curl)"
+    local -r cmd="${curl_cmd} ${curl_opts[*]}"
+    local -r grep_str='href=".*'"(${product_name})?"'.+(tgz|tar.gz)">'
 
-  local raw_versions trimmed_versions
-  raw_versions="$(eval "${cmd}" "${releases_path}")"
-  if [ "${include_src}" = "true" ]; then
-    trimmed_versions="$(echo "${raw_versions}" | grep -oE "${grep_str}" | sed -E 's/.+"(apache-)?(.+)">/\2/g' | cut -d/ -f1)"
-  else
-    trimmed_versions="$(echo "${raw_versions}" | grep -oE "${grep_str}" | grep -v '\-src' | sed -E 's/.+"(apache-)?(.+)">/\2/g' | cut -d/ -f1)"
-  fi
+    local raw_versions trimmed_versions
+    raw_versions="$(eval "${cmd}" "${releases_path}")"
+    if [ "${include_src}" = "true" ]; then
+        trimmed_versions="$(echo "${raw_versions}" | grep -oE "${grep_str}" | sed -E 's/.+"(apache-)?(.+)">/\2/g' | cut -d/ -f1)"
+    else
+        trimmed_versions="$(echo "${raw_versions}" | grep -oE "${grep_str}" | grep -v '\-src' | sed -E 's/.+"(apache-)?(.+)">/\2/g' | cut -d/ -f1)"
+    fi
 
-  echo "${trimmed_versions}" | sort_top_level_versions
+    echo "${trimmed_versions}" | sort_top_level_versions
 }
 
 # stolen from https://github.com/rbenv/ruby-build/pull/631/files#diff-fdcfb8a18714b33b07529b7d02b54f1dR942
 sort_top_level_versions() {
-  sed 'h; s/[+-]/./g; s/.p\([[:digit:]]\)/.z\1/; s/$/.z/; G; s/\n/ /' |
-    LC_ALL=C sort -t. -k 1,1 -k 2,2n -k 3,3n -k 4,4n -k 5,5n | awk '{print $2}'
+    sed 'h; s/[+-]/./g; s/.p\([[:digit:]]\)/.z\1/; s/$/.z/; G; s/\n/ /' |
+        LC_ALL=C sort -t. -k 1,1 -k 2,2n -k 3,3n -k 4,4n -k 5,5n | awk '{print $2}'
 }
 
 sort_sub_versions() {
-  # make columns seperated by | I.E. '1.3.2|b|1.3.2-bin' # shaded-1|0|||shaded-1.0
-  sed -E 's/(.+)/\1|\1/;s/(([0-9]+)\.([0-9]*)(\.?([0-9])*))-?(.)?(.*\|(.+))/\2|\3|\5|\6|\8/g;' | sort -t"|" -k 1,1n -k2,2n -k3,3n -k4,4r | cut -d"|" -f5
+    # make columns seperated by | I.E. '1.3.2|b|1.3.2-bin' # shaded-1|0|||shaded-1.0
+    sed -E 's/(.+)/\1|\1/;s/(([0-9]+)\.([0-9]*)(\.?([0-9])*))-?(.)?(.*\|(.+))/\2|\3|\5|\6|\8/g;' | sort -t"|" -k 1,1n -k2,2n -k3,3n -k4,4r | cut -d"|" -f5
 }
 
 # TODO move this to libexec
 get_sub_versions() {
-  # shellcheck source=../lib/utils.bash
-  . "${THIS_PLUGIN_LIB_DIR}/utils.bash"
-  local -r product_name="$1"
-  local -r include_src="$2"
-  local -r version="$3"
-  local sub_release_path file_names
-  local product_lib_file="${THIS_PLUGIN_LIB_DIR}/${product_name}.sh"
-  sub_release_path="$(releases_path "${product_name}" "${version}/")"
-  file_names="$(list_versions "${product_name}" "${sub_release_path}")"
-  if [ -f "${product_lib_file}" ]; then
-    # shellcheck disable=SC1090
-    . "${product_lib_file}"
-    list_sub_versions "${file_names}" "${include_src}"
-  else
-    if [ "${include_src}" = "false" ]; then
-      printf "%s" "${file_names}" |
-        grep -E 'tgz|tar\.gz' |
-        sed -E 's/'"${product_name}"'-(.+)(\.tgz|\.tar.gz)/\1/g' |
-        sed 's/\-bin//g'
+    local -r product_name="$1"
+    local -r include_src="$2"
+    local -r version="$3"
+    local sub_release_path file_names
+    local product_lib_file="${THIS_PLUGIN_LIB_DIR}/${product_name}.sh"
+    sub_release_path="$(releases_path "${product_name}" "${version}/")"
+    file_names="$(list_versions "${product_name}" "${sub_release_path}")"
+    if [ -f "${product_lib_file}" ]; then
+        # shellcheck disable=SC1090
+        . "${product_lib_file}"
+        echo "$(list_sub_versions "${file_names}" "${include_src}")"
     else
-      printf "%s" "${file_names}" |
-        grep -E '\-bin.*\.tgz|\-bin.*\.tar\.gz' |
-        sed -E 's/'"${product_name}"'-(.+)(\.tgz|\.tar.gz)/\1/g' |
-        sed 's/\-bin//g'
+        if [ "${include_src}" = "false" ]; then
+            printf '%s' "${file_names}" |
+                grep -E 'tgz|tar\.gz' |
+                sed -E 's/'"${product_name}"'-(.+)(\.tgz|\.tar.gz)/\1/g' |
+                sed 's/\-bin//g'
+        else
+            printf '%s' "${file_names}" |
+                grep -E '\-bin.*\.tgz|\-bin.*\.tar\.gz' |
+                sed -E 's/'"${product_name}"'-(.+)(\.tgz|\.tar.gz)/\1/g' |
+                sed 's/\-bin//g'
+        fi
     fi
-  fi
 }
 
 get_versions() {
-  local -r product_name="${1}"
-  local -r include_src="${2:-false}"
+    local -r product_name="${1}"
+    local -r include_src="${2:-false}"
 
-  export -f get_sub_versions
-  export -f releases_path
-  export -f list_versions
-  export -f sort_top_level_versions
-  export DEBUG
-  export THIS_PLUGIN_LIB_DIR
+    export -f get_sub_versions
+    export -f releases_path
+    export -f list_versions
+    export -f sort_top_level_versions
+    export DEBUG
+    export THIS_PLUGIN_LIB_DIR
 
-  release_path="$(releases_path "${product_name}")"
-  init_versions="$(list_release_folders "${product_name}" "${release_path}")"
-  count="$(wc -l <<<"${init_versions}")"
+    release_path="$(releases_path "${product_name}")"
+    init_versions="$(list_release_folders "${product_name}" "${release_path}" | tr " " "\n")"
 
-  # shellcheck disable=SC2005 # not sure if the echo is needed TODO
-  printf '%s' "$(parallel --jobs "$count" get_sub_versions "${product_name}" "${include_src}" <<<"${init_versions}")" | sort_sub_versions | tr "\n" " " | tr -s ' '
-  printf '\n'
+    # Create an array to store the output
+    outputs=""
+    # Process each version
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then
+            outputs+="$(get_sub_versions "${product_name}" "${include_src}" "${line}" | tr "\n" " ") " || true
+        fi
+    done <<<$init_versions
+
+    echo $outputs | sort_sub_versions | tr "\n" " " | tr -s ' '
 }
 
 case "${PRODUCT_NAME}" in
 openoffice)
-  fail "Not supported ${PRODUCT_NAME}"
-  ;;
+    fail "Not supported ${PRODUCT_NAME}"
+    ;;
 *)
-  get_versions "${PRODUCT_NAME}" "${INCLUDE_SRC}"
-  ;;
+    get_versions "${PRODUCT_NAME}" "${INCLUDE_SRC}"
+    ;;
 esac
 
 if [ "${KEEP_DEBUG:-}" != "true" ] && [ -n "${DEBUG:-}" ]; then
-  set +x
+    set +x
 fi
